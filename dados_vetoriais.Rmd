@@ -1,0 +1,237 @@
+---
+title: "Dados vetoriais"
+author: "Daniel Victoria"
+date: "8/23/2019"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Usando pacote *sf*
+
+- *Simple Features*
+- Especificação OGC
+- Manipulação de dados vetoriais
+- Mesmos comandos do PostGIS
+- Integração com *tidyverse*
+- Líder: Edzer Pebesma (gstats)
+- https://github.com/r-spatial
+
+## Abrindo shapefile
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(sf)
+
+uf <- st_read("data/uf_aea_ibge.shp")
+```
+
+## Dado aberto 
+<font size=4>
+```{r, echo=TRUE}
+uf
+```
+</font>
+
+## Método plot (sf)
+```{r, echo=TRUE}
+plot(uf)
+```
+
+## Plot de uma coluna
+```{r, echo=TRUE}
+plot(uf$sigla)
+```
+
+*Ooops*
+
+## Plot de uma coluna
+```{r, echo=TRUE}
+plot(uf['sigla'])
+```
+
+## Gráficos um pouco melhores
+```{r, echo=TRUE}
+ggplot(uf) +
+  geom_sf()
+```
+
+<font size=3>https://www.r-spatial.org/r/2018/10/25/ggplot2-sf.html</font>
+
+## Adiciona eixos
+```{r echo=TRUE, fig.height=4, fig.width=4}
+ggplot(uf) +
+  geom_sf() +
+  xlab("Longitude") + ylab("Latitude") +
+  ggtitle("Estados brasileiros",
+          subtitle = paste0("(", length(uf$nome), " estados)"))
+```
+
+## Cores
+```{r echo=TRUE}
+ggplot(uf) +
+  geom_sf(color = 'red', fill = 'green')
+```
+
+## Cores - 2
+```{r echo=TRUE}
+ggplot(uf) +
+  geom_sf(aes(fill = geocodigo))
+```
+
+## Ajuste de paleta de cores
+
+Eu sempre apanho disso aqui
+
+```{r echo=TRUE, eval=FALSE}
+ggplot(uf) +
+  geom_sf(aes(fill = geocodigo)) +
+  scale_fill_brewer(palette="greens")
+```
+
+## Ajuste de paleta de cores
+
+Eu sempre apanho disso aqui
+
+```{r fig.height=4, fig.width=4 }
+ggplot(uf) +
+  geom_sf(aes(fill = geocodigo)) +
+  scale_fill_brewer(palette="greens")
+```
+
+
+## Colocando label
+```{r echo=TRUE, eval=FALSE}
+centro <- uf %>%
+  st_centroid() %>%
+  st_coordinates() %>%
+  cbind(uf)
+
+ggplot(uf) +
+  geom_sf() +
+  geom_text(data = centro, aes(x = X, y = Y, label = sigla),
+            size = 3)
+```
+
+## Colocando label
+```{r echo=FALSE}
+centro <- uf %>%
+  st_centroid() %>%
+  st_coordinates() %>%
+  cbind(uf)
+
+ggplot(uf) +
+  geom_sf() +
+  geom_text(data = centro, aes(x = X, y = Y, label = sigla),
+            size = 3)
+```
+
+## Plot em outra projeção
+```{r echo=TRUE}
+ggplot(uf) +
+  geom_sf() +
+  coord_sf(crs = "+init=epsg:4326")
+```
+
+## Comparando projeções
+```{r, fig.width=4, fig.height=4}
+ggplot(uf) +
+  geom_sf() +
+  coord_sf(crs = "+init=epsg:4326") +
+  ggtitle("Lat/Lon, WGS84")
+
+ggplot(uf) +
+  geom_sf() +
+  ggtitle("AEA")
+```
+
+## Comparando projeções
+```{r, fig.width=4, fig.height=4}
+ggplot(uf) +
+  geom_sf() +
+  coord_sf(crs = "+init=epsg:32722") +
+  ggtitle("UTM 22S, WGS84")
+
+ggplot(uf) +
+  geom_sf() +
+  ggtitle("AEA")
+```
+
+## Plot em outra projeção
+Dado não é transformado ou recortado. Apenas altera a visualização
+
+<div style="float: left; width: 50%;">
+```{r echo=TRUE, fig.height=3, fig.width=3, fig.align='left'}
+ggplot(uf) +
+  geom_sf() +
+  coord_sf(crs = "+init=epsg:4326",
+           xlim = c(-60, -40), ylim = c(-30, -10))
+```
+</div>
+
+<div style="float: right; width: 50%;">
+<br><br><br><br><br>
+```{r, echo=TRUE}
+st_crs(uf)
+```
+</div>
+
+## Plot em outra projeção
+
+European-centric ETRS89 Lambert Azimuthal Equal-Area projection
+<font size=2>
+```{r echo=TRUE, fig.width=4, fig.height=4, fig.align='center'}
+ggplot(uf) +
+  geom_sf() +
+  coord_sf(crs = "+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000
+           +y_0=3210000 +ellps=GRS80 +units=m +no_defs ")
+```
+</font>
+
+## Mudando a projeção
+
+```{r echo = TRUE}
+uf_wgs <- st_transform(uf, crs = "+init=epsg:4326")
+st_crs(uf_wgs)
+```
+
+## Crescimento populacional
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+pop <- read_csv2("data/populacao_ufs_ibge.csv")
+uf_pop <- uf %>%
+  left_join(pop, by = "sigla") %>%
+  mutate(crescimento = (Pop_2010 - Pop_2000) / Pop_2000)
+ggplot(uf_pop) + geom_sf(aes(fill = crescimento))
+```
+
+## Densidade populacional
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+uf_pop <- uf_pop %>%
+  mutate(area = st_area(.),
+         dens = Pop_2010 / as.numeric(units::set_units(area, "km2")))
+ggplot(uf_pop) +  geom_sf(aes(fill = dens))
+```
+
+## Referências
+
+- [r-spatial github](https://github.com/r-spatial)
+- [*sf*](https://r-spatial.github.io/sf/)
+- [PROJ](https://proj.org/)
+- [Plots com *sf*](https://r-spatial.github.io/sf/articles/sf5.html)
+- [Beautiful maps with R](https://www.r-spatial.org/r/2018/10/25/ggplot2-sf.html)
+
+## Fim da parte com vetores
+
+- [Introdução](intro_mapas_r.html)
+- [Pacote raster](dados_raster.html)
+- [Pacote stars](dados_stars.html)
+- [Mapas dinâmicos](dinamicos.html)
+
+## sessionInfo {.smaller}
+```{r}
+print(sessionInfo(), locale = FALSE)
+```

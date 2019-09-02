@@ -1,0 +1,210 @@
+---
+title: "Mapas dinâmicos e bonitinhos"
+author: "Daniel Victoria"
+date: "8/26/2019"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(sf)
+library(stars)
+```
+
+## Mapas dinâmicos ou bonitinhos
+
+- Base pública de dados vetoriais / raster (*rnaturalearth*)
+- Trazer mapas de fundo de serviços online (*ggmap*)
+- Mapas dinâmicos (*leaflet*, *mapview*)
+
+## Pacote *rnaturalearth*
+
+https://www.naturalearthdata.com/
+
+Base de dados de domínio público, nas escalas 1:10m, 1:50m, and 1:110 milhões. Contém dados no formato vetorial e raster para uso em cartografia ou GIS.
+
+- *rnaturalearth*: funções para acessar os dados
+- *rnaturalearthdata*: dados vetoriais
+- *rnaturalearthhires*: dados vetoriais com alta resolução
+
+Lista de dados disponíveis
+https://www.naturalearthdata.com/features/
+
+## Pacote *rnaturalearth*
+
+```{r, echo = TRUE}
+library(rnaturalearth)
+library(rnaturalearthdata)
+
+ufs <- ne_states(country = 'Brazil', returnclass = 'sf')
+ggplot(ufs) + geom_sf()
+```
+
+## *rnaturalearth*
+
+```{r, echo=TRUE}
+world <- ne_countries(scale = "medium", returnclass = "sf")
+ggplot(data = world) +
+    geom_sf(aes(fill = pop_est)) +
+    scale_fill_viridis_c(option = "plasma", trans = "sqrt")
+
+```
+
+## *ggmap*
+
+Obtem mapa de servidores online
+
+- Stamen maps
+- OpenStreetMaps
+- Google Maps (requer chave API)
+- Infelizmente ainda não funciona muito bem com pacote *sf*
+  - https://github.com/dkahle/ggmap/issues/160
+
+## *ggmap*
+```{r, echo=TRUE}
+library(ggmap)
+
+perfis <- readRDS('data/perfis.RDS')
+br <- c(left = -75, bottom = -35, right = -33, top = 6)
+brasil <- get_map(br, source = "stamen")
+```
+
+## *ggmap*
+```{r, echo = TRUE}
+ggmap(brasil) +
+  geom_point(data = perfis, aes(x = lon, y = lat)) +
+  labs(title = "Soil profiles in Hybras database")
+```
+ 
+## *ggmap*
+```{r, echo=TRUE}
+sul <- c(left = -60, bottom = -35, right = -33, top = -20)
+##br_sul <- get_map(sul, maptype = "toner-lite", source = 'stamen', force = TRUE) ## bug - trazendo mapa errado
+br_sul <- get_stamenmap(sul, maptype = "toner-lite", zoom = 6, force = TRUE)
+```
+
+## *ggmap*
+```{r, echo=TRUE}
+ggmap(br_sul) +
+  geom_point(data = perfis, aes(x = lon, y = lat, col = BR_Soil_Taxonomy)) +
+  labs(title = "Soil profiles in Hybras database")
+```
+
+## *ggmap*
+```{r, echo=TRUE}
+cps_bb <- c(left = -47.1, bottom = -22.9, right = -47, top = -22.8)
+cps <- get_stamenmap(cps_bb, zoom = 14, maptype = "toner-lite")
+```
+
+## *ggmap*
+```{r, echo=TRUE}
+ggmap(cps) +
+  geom_point(data = perfis, aes(x = lon, y = lat, col = BR_Soil_Taxonomy)) +
+  labs(title = "Soil profiles in Hybras database")
+```
+
+## *Leaflet*
+
+- Biblioteca JavaScript para criar mapas interativos
+- *Mobile friendly*
+- Pacote R para gerar os mapas mais facilmente
+- *leafem*: extensão que permite adicionar camadas *sf* e outras coisinhas
+- *mapview*: baseia-se no leaflet + leafem para gerar mapas de forma rápida
+
+## *Leaflet*
+
+```{r, echo=TRUE}
+require(leaflet)
+m <- leaflet()
+m <- addTiles(m)
+m <- setView(m, -50, -20, zoom=4)
+
+m <- addMarkers(m, lng=-47, lat=-23, popup="Campinas") # Oncoto?
+
+# adicionando do geoserver do IBGE
+m <- addWMSTiles(m, 'https://geoservicos.ibge.gov.br/geoserver/ows',
+                 layers='CCAR:BC250_Terra_Indigena_A',
+                 options = WMSTileOptions(format = "image/png",
+                                          transparent=TRUE),
+                 attribution = 'teste')
+```
+## *Leaflet*
+
+```{r}
+m
+```
+
+## *Leaflet* 2
+### Preparando os dados
+```{r, echo=TRUE, message=FALSE, warning=FALSE, size=6}
+library(mapview)
+library(leafem)
+
+koppen_orig <- read_stars('data/koppen_zarc_resample.tif')
+koppen <- st_warp(koppen_orig, crs = st_crs(3857), method = "ngb")
+#koppen <- projectRasterForLeaflet(koppen_orig, method = "ngb")
+
+cores <- c("#7bae65", "#314999", "#221f65", "#aac31b", "#549a48", "#b8c016",
+                     "#e8e607", "#45922a", "#d39525", "#8ec0e1", "#275c26", "#3a7bc7")
+legenda <- c("Cwa", "Am", "Af", "Cfa", "Cwb", "Csb", "Csa", "Cfb",
+                       "BSh", "As", "Cwc", "Aw")
+
+pal <- colorFactor(cores, 1:12, na.color = 'transparent')
+```
+<font size=1>Warnings e mensagens suprimidas</font>
+
+## *Leaflet* 2
+### Gerando o mapa
+```{r echo=TRUE, message=FALSE, warning=FALSE, size=6}
+m <- leaflet() %>%
+  addTiles(group = 'OSM') %>%
+  # addRasterImage(koppen, group = 'koppen', project = FALSE, colors = pal) %>%
+  addStarsImage(koppen, group = 'koppen', project = FALSE, colors = pal) %>%
+  leafem::addFeatures(ufs, color = 'black', weight = 2, opacity = 1,
+                      fill = FALSE, group = 'estado' ) %>%
+  addMarkers(lng = perfis$lon, lat = perfis$lat, popup = perfis$BR_Soil_Taxonomy) %>%
+  addLayersControl(
+    overlayGroups = c('koppen', 'estado')) %>%
+  addLegend("bottomleft", 
+            colors = cores,
+            labels = legenda,
+            opacity = 1
+            )
+```
+<font size=1>Warnings e mensagens suprimidas</font>
+
+## *Leaflet* 2
+```{r}
+m
+```
+
+## Exemplos no RPubs
+
+É possível enviar os mapas criados para servidores online, como o [RPubs](http://rpubs.com/).
+
+- [Produtividade potencial por município](http://rpubs.com/dvictori/456982)
+- [Estações pluviométricas ANA](http://rpubs.com/dvictori/399286)
+- [Temperatura mínima na primeira quinzena de Dezembro, 2018](http://rpubs.com/dvictori/452322)
+
+<font size=3>Cuidado ao incluir Rasters. Pode deixar o tamanho do arquivo bem grande</font>
+
+## Referências
+
+- [Natural Earth](https://www.naturalearthdata.com/)
+- [Beautiful maps with R](https://www.r-spatial.org/r/2018/10/25/ggplot2-sf.html)
+- [ggmap](https://github.com/dkahle/ggmap)
+- [R Leaflet](https://rstudio.github.io/leaflet/)
+- [r-spatial github](https://github.com/r-spatial)
+
+## Fim da parte com mapas dinâmicos
+
+- [Introdução](intro_mapas_r.html)
+- [Vetores](dados_vetoriais.html)
+- [Pacote raster](dados_raster.html)
+- [Pacote stars](dados_stars.html)
+
+## sessionInfo {.smaller}
+```{r}
+print(sessionInfo(), locale = FALSE)
+```

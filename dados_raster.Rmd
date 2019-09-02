@@ -1,0 +1,159 @@
+---
+title: "Processando rasters"
+author: "Daniel Victoria"
+date: "8/23/2019"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+```
+
+## Usando pacote *raster*
+
+- Diversas funções para ler e manipular dados matriciais
+- Diferentes formatos (*rgdal*)
+- netCDF (*ncdf4*)
+- classes
+  - raster
+  - stack
+  - brick
+- Manual: https://cran.r-project.org/web/packages/raster/raster.pdf
+
+## Abrindo um raster
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(raster)
+
+koppen <- raster('data/koppen_zarc_resample.tif')
+koppen
+```
+
+## Meu primeiro raster plot
+```{r echo=TRUE}
+plot(koppen)
+```
+
+## Melhorando as cores
+```{r echo = TRUE}
+pal <- c("#7bae65", "#314999", "#221f65",
+         "#aac31b", "#549a48", "#b8c016",
+         "#e8e607", "#45922a", "#d39525",
+         "#8ec0e1", "#275c26", "#3a7bc7")
+plot(koppen, col = pal)
+```
+
+## Algebra de mapas
+```{r echo=TRUE}
+
+plot(koppen * (koppen == 10))
+
+```
+
+## Reclassificação
+```{r echo = TRUE}
+mi <- c(1, 0, 2, 0, 3, 0, 4, 0, 5, 0,
+       6, 0, 7, 0, 8, 0, 9, 1, 10, 1,
+       11, 0,12, 1)
+rclmat_i <- matrix(mi, ncol=2, byrow=TRUE)
+koppen_zarc_uva_irrigada <- reclassify(koppen, rclmat_i)
+plot(koppen_zarc_uva_irrigada)
+```
+
+## Clima na bacia do São Francisco
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(sf)
+bacia <- st_read('data/sao_francisco.shp', options = 'encoding=latin1', quiet = TRUE) %>%
+  st_transform(crs = 4326)
+plot(koppen, col = pal)
+plot(bacia[1], col = NA, add = TRUE)
+```
+
+## Recortando
+<font size=3>
+Pacote *raster* ainda não conversa direito com *sf*. Converter para *sp*
+</font>
+```{r, echo = TRUE}
+clima_sf <- crop(koppen, as(bacia, 'Spatial'))
+plot(clima_sf, col = pal)
+```
+
+## Máscara
+
+<font size=3>
+Pacote *raster* ainda não conversa direito com *sf*. Converter para *sp*
+</font>
+```{r, echo = TRUE}
+clima_bacia <- mask(clima_sf, as(bacia, 'Spatial'))
+plot(clima_bacia, col = pal)
+```
+
+## Dados temporais
+
+Trabalhando com netCDF
+
+```{r echo = TRUE}
+temp <- brick('data/Tavg_monthly_UT_Brazil_v2_19800101_20151231.nc')
+temp
+```
+
+## Vendo alguns mapas
+```{r, echo = TRUE}
+plot(temp[[1:12]])
+```
+
+## Qual a temperatura em Campinas?
+```{r, echo = TRUE, fig.height=4, fig.width=6, fig.align='center'}
+camp <- st_sfc(st_point(c(-47, -23)))
+t_camp <- raster::extract(temp, as(camp, 'Spatial'))
+plot(t(t_camp), type = 'l')
+```
+<font size = 2>
+Segundo argumento da função `extract` pode ser número da célula, par de coordenadas, objeto do tipo *sp*, linha, polígono
+</font>
+
+## Qual a temperatura no estado de SP
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+uf <- st_read("data/uf_aea_ibge.shp", quiet = TRUE)
+uf_sp <- uf %>%
+  filter(sigla == 'SP') %>% as('Spatial')
+
+media_sp <- raster::extract(temp, uf_sp,
+                            fun = mean, na.rm = TRUE)
+max_sp <- raster::extract(temp, uf_sp,
+                          fun = max, na.rm = TRUE)
+min_sp <- raster::extract(temp, uf_sp,
+                          fun = min, na.rm = TRUE)
+
+dados <- tibble(data = seq.Date(as.Date('1980-01-15'), as.Date('2015-12-15'), by = 'month'),
+                media = as.numeric(media_sp),
+                max = as.numeric(max_sp),
+                min = as.numeric(min_sp))
+```
+
+## Temperatura no estado
+```{r echo = TRUE}
+ggplot(dados) +
+  geom_line(aes(x = data, y = media)) +
+  geom_line(aes(x = data, y = max), col = 'red') +
+  geom_line(aes(x = data, y = min), col = 'blue')
+```
+
+## Climatologia
+```{r, echo = TRUE}
+meses <- lubridate::month(dados$data)
+clima <- stackApply(temp, meses, fun = mean)
+plot(clima)
+```
+
+## Fim da parte com pacote *raster*
+
+- [Introdução](intro_mapas_r.html)
+- [Vetores](dados_vetoriais.html)
+- [Pacote stars](dados_stars.html)
+- [Mapas dinâmicos](dinamicos.html)
+
+## sessionInfo {.smaller}
+```{r}
+print(sessionInfo(), locale = FALSE)
+```

@@ -1,0 +1,135 @@
+---
+title: "Pacote stars"
+author: "Daniel Victoria"
+date: "8/23/2019"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(sf)
+```
+
+## Pacote *stars*
+
+Parte do conjunto de pacotes do [r-spatial](https://github.com/r-spatial)
+
+- Data cubes
+- Raster e vetor
+- integração com *tidyverse*
+- integração com *sf*
+- GDAL ou netCDF
+
+## Abrindo netCDF
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(stars)
+temp <- read_stars('data/Tavg_monthly_UT_Brazil_v2_19800101_20151231.nc')
+st_crs(temp) <- 4326 # Projeção não reconhicida. Pacote raster nao precisa disso
+temp
+```
+<font size=1>Warnings e mensagens suprimidas</font>
+
+## Alguns gráficos
+```{r, echo = TRUE, warning=FALSE}
+plot(temp)
+```
+<font size=1>Warnings e mensagens suprimidas</font>
+
+## Filtrando dados
+```{r, echo = TRUE, warning=FALSE}
+temp %>%
+  filter(time == as.Date('1980-01-16')) %>%
+  plot()
+```
+<font size=1>Warnings e mensagens suprimidas</font>
+
+## Filtrando dados
+Usando `[` para recortar, segue a ordem: atributo, dim1, dim2, dim3...
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+plot(temp[ , , ,1])
+```
+<font size=1>Warnings e mensagens suprimidas</font>
+
+## Temperatura em Campinas
+```{r, echo=TRUE, fig.width=4, fig.height=4, fig.align="center"}
+b <- aggregate(temp, st_sfc(st_point(c(-47,-23)), crs = 4326), function(x) x[1],
+          as_points = FALSE) %>%
+  setNames('tavg')
+
+ggplot(as.data.frame(b)) + geom_line(aes(x = time, y = tavg))
+```
+
+## Temperatura no estado de SP
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+uf <- st_read("data/uf_aea_ibge.shp", quiet = TRUE)
+
+uf_sp <- uf %>%
+  filter(sigla == 'SP') %>%
+  st_transform(4326) # aparentemente, pacote raster faz a transformação automática
+
+max_sp_stars <- temp[uf_sp] %>%   # extrai para o polígono
+  st_apply(3, max, na.rm = TRUE)  # aplica função ao longo do tempo (dim = 3)
+min_sp_stars <- temp[uf_sp] %>%
+  st_apply(3, min, na.rm = TRUE)
+avg_sp_stars <- temp[uf_sp] %>%
+  st_apply(3, mean, na.rm = TRUE)
+
+# juntando
+dados <- as_tibble(max_sp_stars) %>%      # converte para tibble
+  left_join(as_tibble(min_sp_stars)) %>%  # junta com outras proriedades
+  left_join(as_tibble(avg_sp_stars)) %>%
+  gather('prop', 'temp', -time)           # passa para formato long
+```
+<font size=1>Warnings e mensagens suprimidas</font>
+
+## Temperatura no estado de SP
+```{r, echo = TRUE}
+ggplot(dados) +
+  geom_line(aes(x = time, y = temp, color = prop))
+```
+
+
+## Climatologia
+```{r, echo=TRUE}
+media_mensal <- function(mes) {
+  temp %>%
+    filter(lubridate::month(time) == mes) %>%
+    st_apply(c(1,2), mean, na.rm = TRUE)
+}
+
+a <- lapply(1:12, media_mensal) # calcula a média em cada mês
+
+clima <- do.call(c, a) %>% # junta elementos da lista. Mês como atributo
+  merge() %>% # passa atributo (mes) para a dimensao
+  setNames("T_media") %>% # arruma nome do atributo
+  st_set_dimensions(3, values = 1:12) %>% # arruma dimensoes
+  st_set_dimensions(names = c('x', 'y', 'mes'))
+```
+<font size=2>Dúvida se não tem um jeito melhor de fazer isso</font>
+
+## Climatologia
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+plot(clima, col = viridis::viridis(10))
+```
+<font size=1>Warnings e mensagens suprimidas</font>
+
+## Referências
+
+- [r-spatial github](https://github.com/r-spatial)
+- [stars github page](https://r-spatial.github.io/stars/)
+- [`raster` to `stars`](https://github.com/r-spatial/stars/wiki/How-%60raster%60-functions-map-to-%60stars%60-functions)
+
+
+## Fim da parte com pacote *stars*
+
+- [Introdução](intro_mapas_r.html)
+- [Vetores](dados_vetoriais.html)
+- [Pacote raster](dados_raster.html)
+- [Mapas dinâmicos](dinamicos.html)
+
+## sessionInfo {.smaller}
+```{r}
+print(sessionInfo(), locale = FALSE)
+```
